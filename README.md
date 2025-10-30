@@ -45,6 +45,7 @@ package main
 
 import (
     "context"
+    "encoding/json"
     "fmt"
     "log"
     "os"
@@ -56,6 +57,7 @@ import (
     "github.com/tmc/langchaingo/agents"
     "github.com/tmc/langchaingo/chains"
     "github.com/tmc/langchaingo/llms/openai"
+    "github.com/tmc/langchaingo/tools"
 )
 
 func main() {
@@ -71,7 +73,7 @@ func main() {
 
     // Connect to a local MCP server (start example server via command)
     client := mcp.NewClient(&mcp.Implementation{Name: "mcp-client", Version: "v1.0.0"}, nil)
-    transport := &mcp.CommandTransport{Command: exec.Command("../server/mcp-server")}
+    transport := &mcp.CommandTransport{Command: exec.Command("../server/server")}
     session, err := client.Connect(ctx, transport, nil)
     if err != nil { log.Fatal(err) }
     defer session.Close()
@@ -81,11 +83,25 @@ func main() {
     tools, err := adapter.Tools(ctx)
     if err != nil { log.Fatal(err) }
 
-    // Use tools in a LangChainGo Agent
-    agent := agents.NewOneShotAgent(llm, tools, agents.WithMaxIterations(3))
+    // Verify discovery by directly calling the "greet" tool
+    var greetTool tools.Tool
+    for _, t := range tools {
+        if t.Name() == "greet" { greetTool = t; break }
+    }
+    name := "leon" // dynamic variable, can be from env or user input
+    payload, _ := json.Marshal(map[string]string{"name": name})
+    if greetTool != nil {
+        out, err := greetTool.Call(ctx, string(payload))
+        if err != nil { log.Fatal(err) }
+        fmt.Println("greet tool output:", out)
+    }
+
+    // Use tools in a LangChainGo Agent (require Final Answer prefix)
+    agent := agents.NewOneShotAgent(llm, tools, agents.WithMaxIterations(5))
     executor := agents.NewExecutor(agent)
 
-    result, err := chains.Run(ctx, executor, "welcome leon")
+    prompt := fmt.Sprintf("Must call tool greet with params %s. Return only the tool output prefixed by 'Final Answer:'", string(payload))
+    result, err := chains.Run(ctx, executor, prompt)
     if err != nil { log.Fatal(err) }
     fmt.Println(result)
 }

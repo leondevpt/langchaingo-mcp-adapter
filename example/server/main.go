@@ -20,7 +20,8 @@ func SayHi(ctx context.Context, req *mcp.CallToolRequest, input Input) (
 	Output,
 	error,
 ) {
-	return nil, Output{Greeting: "Hi " + input.Name}, nil
+	log.Printf("SayHi invoked with input: %+v", input)
+	return nil, Output{Greeting: "[MCP] Hello " + input.Name}, nil
 }
 
 func main() {

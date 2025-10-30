@@ -7,11 +7,13 @@
 ## Overview
 
 本适配器充当 MCP 与 LangChainGo 之间的桥梁：
+
 - 从 MCP 服务端发现可用工具并转换为 `langchaingo/tools.Tool`；
 - 以统一接口在 LangChainGo 的 Agent/Chain 中调用这些工具；
 - 提供超时控制、输入模式描述拼接等易用能力。
 
 代码核心位于 `adapter.go`：
+
 - `New(session, opts...)`：基于一个活跃的 MCP `ClientSession` 创建适配器；
 - `Tools(ctx)`：拉取 MCP 服务端的工具并转换为 LangChainGo 的工具切片；
 - 工具实现会在 `Description()` 中追加输入模式（schema）说明，`Call(ctx, input)` 支持以 JSON 字符串作为调用参数。
@@ -45,6 +47,7 @@ package main
 
 import (
     "context"
+    "encoding/json"
     "fmt"
     "log"
     "os"
@@ -56,6 +59,7 @@ import (
     "github.com/tmc/langchaingo/agents"
     "github.com/tmc/langchaingo/chains"
     "github.com/tmc/langchaingo/llms/openai"
+    "github.com/tmc/langchaingo/tools"
 )
 
 func main() {
@@ -71,7 +75,7 @@ func main() {
 
     // 连接本地 MCP 服务器（使用命令启动示例服务器）
     client := mcp.NewClient(&mcp.Implementation{Name: "mcp-client", Version: "v1.0.0"}, nil)
-    transport := &mcp.CommandTransport{Command: exec.Command("../server/mcp-server")}
+    transport := &mcp.CommandTransport{Command: exec.Command("../server/server")}
     session, err := client.Connect(ctx, transport, nil)
     if err != nil { log.Fatal(err) }
     defer session.Close()
@@ -81,11 +85,26 @@ func main() {
     tools, err := adapter.Tools(ctx)
     if err != nil { log.Fatal(err) }
 
-    // 在 LangChainGo Agent 中使用这些工具
-    agent := agents.NewOneShotAgent(llm, tools, agents.WithMaxIterations(3))
+    // 先直接调用一次 "greet" 工具以验证发现和调用链路
+    var greetTool tools.Tool
+    for _, t := range tools {
+        if t.Name() == "greet" { greetTool = t; break }
+    }
+    name := os.Getenv("GREETER_NAME")
+    if name == "" { name = "leon" }
+    payload, _ := json.Marshal(map[string]string{"name": name})
+    if greetTool != nil {
+        out, err := greetTool.Call(ctx, string(payload))
+        if err != nil { log.Fatal(err) }
+        fmt.Println("greet tool output:", out)
+    }
+
+    // 在 LangChainGo Agent 中使用这些工具（要求以 Final Answer: 前缀返回结果）
+    agent := agents.NewOneShotAgent(llm, tools, agents.WithMaxIterations(5))
     executor := agents.NewExecutor(agent)
 
-    result, err := chains.Run(ctx, executor, "welcome leon")
+    prompt := fmt.Sprintf("必须调用工具 greet，并传入参数 %s。完成后以 Final Answer: 为前缀原样返回工具输出，不要添加任何其他内容。", string(payload))
+    result, err := chains.Run(ctx, executor, prompt)
     if err != nil { log.Fatal(err) }
     fmt.Println(result)
 }

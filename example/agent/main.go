@@ -1,14 +1,14 @@
 package main
 
 import (
-    "context"
-    "encoding/json"
-    "fmt"
-    "log"
-    "os"
-    "os/exec"
-    "path/filepath"
-    "time"
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"time"
 
 	"runtime"
 
@@ -82,14 +82,14 @@ func main() {
 	)
 	executor := agents.NewExecutor(agent)
 
-    // Agent 是否调用工具，取决于 LLM 的决策。为了更确定让它使用工具，把问题换成明确的指令
-    // 为了让解析器正常工作，要求以 Final Answer: 前缀返回工具输出
-    // 使用动态 name 变量构建 JSON 入参
-    question := fmt.Sprintf("必须调用工具 greet，并传入参数 %s。完成后以 Final Answer: 为前缀原样返回工具输出，不要添加任何其他内容。", string(payload))
+	// Whether the Agent calls a tool depends on the LLM's decision. To ensure it uses the tool more reliably, rephrase the question as an explicit instruction.
+	// To ensure the parser functions correctly, require that the tool output is returned with the prefix "Final Answer:".
+	// Use the dynamic name variable to construct the JSON input parameters.
+    prompt := fmt.Sprintf("Must call tool greet with params %s. Return only the tool output prefixed by 'Final Answer:'", string(payload))
 	result, err := chains.Run(
 		ctx,
 		executor,
-		question,
+		prompt,
 	)
 	if err != nil {
 		log.Fatalf("Agent execution error: %v", err)
